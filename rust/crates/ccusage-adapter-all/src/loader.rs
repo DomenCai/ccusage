@@ -171,7 +171,7 @@ fn cached_pricing_map(
     pricing
 }
 
-fn load_pricing(
+pub(super) fn load_pricing(
     shared: &SharedArgs,
     source_shared: &BTreeMap<&'static str, SharedArgs>,
     load_unified: bool,
@@ -208,7 +208,7 @@ fn load_kind_for_report(kind: AgentReportKind) -> AgentReportKind {
 /// it, or the unified ones for a source the config does not address. `json` is
 /// forced the way `load_base_rows` forces it on the unified options, since the
 /// sources only feed the unified report.
-fn shared_by_source(
+pub(super) fn shared_by_source(
     sources: &BTreeMap<String, SourceArgs>,
     shared: &SharedArgs,
 ) -> BTreeMap<&'static str, SharedArgs> {
@@ -676,12 +676,12 @@ fn leak_agent_name(name: &str) -> &'static str {
     Box::leak(name.to_string().into_boxed_str())
 }
 
-struct ResolvedNamedPiStore {
-    name: String,
-    paths: Vec<PathBuf>,
+pub(super) struct ResolvedNamedPiStore {
+    pub(super) name: String,
+    pub(super) paths: Vec<PathBuf>,
 }
 
-fn resolve_named_pi_store_paths(
+pub(super) fn resolve_named_pi_store_paths(
     stores: &[NamedPiStore],
     default_pi_path: Option<&str>,
 ) -> Result<Vec<ResolvedNamedPiStore>> {

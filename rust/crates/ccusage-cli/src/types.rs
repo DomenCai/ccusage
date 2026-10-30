@@ -11,6 +11,7 @@ pub enum Command {
     Session(SessionArgs),
     Blocks(BlocksArgs),
     Statusline(StatuslineArgs),
+    Entries(EntriesArgs),
     Codex(AgentCommandArgs),
     OpenCode(AgentCommandArgs),
     Amp(AgentCommandArgs),
@@ -168,6 +169,14 @@ pub struct StatuslineArgs {
     pub debug: bool,
     pub model_label_aliases: HashMap<String, String>,
     pub pricing_overrides: BTreeMap<String, PricingOverride>,
+}
+
+/// Options of `ccusage entries`, the per-request JSON listing.
+#[derive(Clone)]
+pub struct EntriesArgs {
+    pub shared: SharedArgs,
+    /// Built-in agent names to load; `None` loads every source.
+    pub sources: Option<Vec<String>>,
 }
 
 #[derive(Clone)]

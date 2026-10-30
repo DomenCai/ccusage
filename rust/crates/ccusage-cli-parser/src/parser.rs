@@ -3,10 +3,10 @@ use std::{collections::BTreeMap, ffi::OsString, path::PathBuf};
 use crate::arg_parser::ArgParser;
 use crate::help::{print_help_and_exit, print_version_and_exit};
 use ccusage_cli::{
-    AgentCommandArgs, AgentReportKind, BlocksArgs, CliConfig, CodexSpeed, Command, CostMode,
-    CostSource, DATE_BOUND_FORMATS, DailyArgs, OPENCODE_AGENT_REPORTS, STANDARD_AGENT_REPORTS,
-    SessionArgs, SharedArgs, SortOrder, StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs,
-    normalize_date_bound,
+    AgentCommandArgs, AgentReportKind, BUILT_IN_AGENT_NAMES, BlocksArgs, CliConfig, CodexSpeed,
+    Command, CostMode, CostSource, DATE_BOUND_FORMATS, DailyArgs, EntriesArgs,
+    OPENCODE_AGENT_REPORTS, STANDARD_AGENT_REPORTS, SessionArgs, SharedArgs, SortOrder,
+    StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs, normalize_date_bound,
 };
 
 use crate::Cli;
@@ -188,6 +188,7 @@ fn parse_command(
             root_all_options,
         ),
         "session" => parse_top_level_session_command(parser, shared, config, root_all_options),
+        "entries" => parse_entries_command(parser, shared),
         "blocks" => {
             let mut args = BlocksArgs {
                 shared,
@@ -447,6 +448,34 @@ fn parse_all_command(
         start_of_week,
         sources: BTreeMap::new(),
     }))
+}
+
+fn parse_entries_command(parser: &mut ArgParser, shared: SharedArgs) -> Result<Command, String> {
+    let mut args = EntriesArgs {
+        shared,
+        sources: None,
+    };
+    while parser.peek().is_some() {
+        if matches!(parser.peek_name(), Some("--sources")) {
+            parser.next_flag()?;
+            let value = parser.value_for("--sources")?;
+            let sources = value
+                .split(',')
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+                .map(|name| {
+                    BUILT_IN_AGENT_NAMES
+                        .contains(&name)
+                        .then(|| name.to_string())
+                        .ok_or_else(|| format!("Unknown source '{name}' for --sources"))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            args.sources = Some(sources);
+            continue;
+        }
+        parse_shared_arg(parser, &mut args.shared)?;
+    }
+    Ok(Command::Entries(args))
 }
 
 fn parse_top_level_session_command(
@@ -817,6 +846,7 @@ fn is_command(arg: &str) -> bool {
             | "session"
             | "blocks"
             | "statusline"
+            | "entries"
             | "claude"
             | "codex"
             | "opencode"
@@ -1105,6 +1135,7 @@ fn report_shared<'a>(
         Some(Command::Session(args)) => (&args.shared, false),
         Some(Command::Blocks(args)) => (&args.shared, false),
         Some(Command::Statusline(_)) => (root_shared, false),
+        Some(Command::Entries(args)) => (&args.shared, false),
         Some(
             Command::Codex(args)
             | Command::OpenCode(args)

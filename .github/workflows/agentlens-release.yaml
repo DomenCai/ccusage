@@ -1,0 +1,23 @@
+# AgentLens fork：打 agentlens-v* 标签时构建 macOS arm64 二进制并发布 release。
+name: agentlens-release
+
+on:
+  push:
+    tags: ['agentlens-v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        working-directory: rust
+        run: cargo build --release -p ccusage --features fetch-litellm-pricing
+      - name: Package
+        run: tar -czf ccusage-darwin-arm64.tar.gz -C rust/target/release ccusage
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: ccusage-darwin-arm64.tar.gz

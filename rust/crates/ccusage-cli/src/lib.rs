@@ -3,9 +3,10 @@ mod types;
 
 pub use types::{
     AgentCommandArgs, AgentReportKind, BlocksArgs, CliConfig, CodexSpeed, Command, CostMode,
-    CostSource, DATE_BOUND_FORMATS, DailyArgs, NamedPiStore, NoConfig, OPENCODE_AGENT_REPORTS,
-    PricingOverride, STANDARD_AGENT_REPORTS, SessionArgs, SharedArgs, SortOrder, SourceArgs,
-    StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs, normalize_date_bound,
+    CostSource, DATE_BOUND_FORMATS, DailyArgs, EntriesArgs, NamedPiStore, NoConfig,
+    OPENCODE_AGENT_REPORTS, PricingOverride, STANDARD_AGENT_REPORTS, SessionArgs, SharedArgs,
+    SortOrder, SourceArgs, StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs,
+    normalize_date_bound,
 };
 
 /// Default length, in hours, of one billing block.

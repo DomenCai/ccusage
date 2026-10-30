@@ -38,6 +38,7 @@ fn main() -> Result<()> {
         Command::Session(args) => commands::run_session(args),
         Command::Blocks(args) => commands::run_blocks(args),
         Command::Statusline(args) => commands::run_statusline(args),
+        Command::Entries(args) => adapter::all::run_entries(args),
         Command::Codex(args) => adapter::codex::run(args),
         Command::OpenCode(args) => adapter::opencode::run(args),
         Command::Amp(args) => adapter::amp::run(args),

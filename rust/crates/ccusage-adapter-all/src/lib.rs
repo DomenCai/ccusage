@@ -1,6 +1,9 @@
+mod entries;
 mod loader;
 mod report;
 mod types;
+
+pub use entries::run as run_entries;
 
 use ccusage_adapter_codex::CodexGroup;
 #[cfg(test)]
