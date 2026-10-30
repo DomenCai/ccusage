@@ -38,11 +38,23 @@ pub fn calculate_cost_for_usage_at(
 ) -> f64 {
     match mode {
         CostMode::Display => cost_usd.unwrap_or(0.0),
-        CostMode::Auto => {
-            cost_usd.unwrap_or_else(|| calculate_cost_from_tokens(model, usage, timestamp, pricing))
-        }
+        CostMode::Auto => recorded_cost_for_auto(model, cost_usd, pricing)
+            .unwrap_or_else(|| calculate_cost_from_tokens(model, usage, timestamp, pricing)),
         CostMode::Calculate => calculate_cost_from_tokens(model, usage, timestamp, pricing),
     }
+}
+
+/// AgentLens fork：Auto 模式下来源自带的成本，在模型配置了用户价格覆盖时作废，改按覆盖价计算。
+/// 上游只在没有自带成本时才查价格表，手动价对 Claude、Grok 等会记成本的来源不生效。
+pub fn recorded_cost_for_auto(
+    model: Option<&str>,
+    cost_usd: Option<f64>,
+    pricing: Option<&PricingMap>,
+) -> Option<f64> {
+    let overridden = model
+        .zip(pricing)
+        .is_some_and(|(model, pricing)| pricing.has_user_override(model));
+    cost_usd.filter(|_| !overridden)
 }
 
 pub fn stored_cost_for_mode(cost_usd: Option<f64>, mode: CostMode) -> Option<f64> {
@@ -237,6 +249,39 @@ mod tests {
             missing_pricing_model_for_token_total(Some("unknown-model"), 0, Some(&pricing)),
             None,
             "usage without tokens is not reported"
+        );
+    }
+
+    #[test]
+    fn user_override_replaces_recorded_cost_in_auto_mode() {
+        let model = "recorded-model".to_string();
+        let pricing_override = crate::cli::PricingOverride {
+            input_cost_per_token: Some(1.0),
+            output_cost_per_token: Some(2.0),
+            ..crate::cli::PricingOverride::default()
+        };
+        let pricing = PricingMap::load_with_overrides(true, false, [(&model, &pricing_override)]);
+        let usage = crate::TokenUsageRaw {
+            input_tokens: 1,
+            output_tokens: 1,
+            ..crate::TokenUsageRaw::default()
+        };
+        let cost = |model: &str| {
+            calculate_cost_for_usage_at(
+                Some(model),
+                usage,
+                Some(0.5),
+                None,
+                CostMode::Auto,
+                Some(&pricing),
+            )
+        };
+
+        assert_eq!(cost("recorded-model"), 3.0);
+        assert_eq!(
+            cost("other-model"),
+            0.5,
+            "models without an override keep the recorded cost"
         );
     }
 

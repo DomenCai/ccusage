@@ -94,7 +94,13 @@ pub fn run(args: EntriesArgs) -> Result<()> {
         rows.extend(source.rows);
         sessions.extend(source.sessions);
     }
-    let output = json!({ "entries": rows, "sessions": sessions, "detectedAgents": detected });
+    let pricing = pricing_json(&rows, &unified_pricing);
+    let output = json!({
+        "entries": rows,
+        "sessions": sessions,
+        "pricing": pricing,
+        "detectedAgents": detected,
+    });
     // Compact on purpose: remote machines stream this over SSH every poll.
     let stdout = std::io::stdout();
     let mut stdout = BufWriter::new(stdout.lock());
@@ -204,6 +210,31 @@ fn loaded_entries_source(
         detected,
         warnings: Vec::new(),
     }
+}
+
+/// 输出里出现的每个模型在统一价格表中查到的基础单价（美元/token，已含用户覆盖），
+/// 键与 `entries[].model` 一致；查不到的模型不出现。只供展示：各来源计价时还会试
+/// 自己的候选名、阶梯价和来源自带成本，单条 `cost` 以记录为准。
+fn pricing_json(rows: &[Value], pricing: &PricingMap) -> Map<String, Value> {
+    let models: std::collections::BTreeSet<&str> = rows
+        .iter()
+        .filter_map(|row| row.get("model").and_then(Value::as_str))
+        .collect();
+    models
+        .into_iter()
+        .filter_map(|model| {
+            let price = pricing.find(model)?;
+            Some((
+                model.to_string(),
+                json!({
+                    "inputCostPerToken": price.input,
+                    "outputCostPerToken": price.output,
+                    "cacheCreationInputTokenCost": price.cache_creation_input_token_cost(),
+                    "cacheReadInputTokenCost": price.cache_read,
+                }),
+            ))
+        })
+        .collect()
 }
 
 fn sessions_json(agent: &str, meta: &HashMap<String, SessionMeta>) -> Map<String, Value> {

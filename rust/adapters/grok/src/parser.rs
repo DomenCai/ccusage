@@ -11,7 +11,8 @@ use serde_json::Value;
 use crate::{
     LoadedEntry, PricingMap, Result, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
     calculate_cost_for_usage_at, cli::CostMode, format_date_tz, format_rfc3339_millis,
-    missing_pricing_model_for_candidates, stored_cost_for_mode, total_usage_tokens,
+    missing_pricing_model_for_candidates, recorded_cost_for_auto, stored_cost_for_mode,
+    total_usage_tokens,
 };
 use ccusage_adapter_common::jsonl;
 use ccusage_core::fast::LinePrefilter;
@@ -478,7 +479,12 @@ fn calculate_grok_cost_at(
         CostMode::Display => cost_usd.unwrap_or(0.0),
         // Grok's own figure is authoritative, so `auto` prefers it and only falls
         // back to the pricing table when a turn recorded no ticks.
-        CostMode::Auto if cost_usd.is_some() => cost_usd.unwrap_or(0.0),
+        // AgentLens fork: a user pricing override on the model wins over the ticks.
+        CostMode::Auto
+            if recorded_cost_for_auto(Some(raw_model), cost_usd, Some(pricing)).is_some() =>
+        {
+            cost_usd.unwrap_or(0.0)
+        }
         CostMode::Auto | CostMode::Calculate => {
             // Exact hits across every candidate first: `find` falls back to
             // substring matching, and a fuzzy hit on the first candidate would
@@ -523,7 +529,10 @@ fn missing_grok_pricing(
 ) -> Option<String> {
     // A turn that carried its own cost needs no pricing entry, so `display` and a
     // ticks-backed `auto` never warn about a missing model.
-    if mode == CostMode::Display || (mode == CostMode::Auto && cost_usd.is_some()) {
+    if mode == CostMode::Display
+        || (mode == CostMode::Auto
+            && recorded_cost_for_auto(Some(raw_model), cost_usd, Some(pricing)).is_some())
+    {
         return None;
     }
     missing_pricing_model_for_candidates(
