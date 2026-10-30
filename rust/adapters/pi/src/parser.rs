@@ -664,7 +664,10 @@ fn source_cost_for_mode(
 ) -> Option<f64> {
     match mode {
         CostMode::Auto if has_override => None,
-        CostMode::Auto => display_cost.filter(|cost| cost.is_finite() && *cost >= 0.0),
+        // AgentLens fork: providers without price config in pi record `cost.total: 0`;
+        // treat it as missing so Auto mode estimates from model pricing (or reports
+        // missing pricing) instead of showing a fake $0.
+        CostMode::Auto => display_cost.filter(|cost| cost.is_finite() && *cost > 0.0),
         _ => display_cost,
     }
 }
@@ -1098,7 +1101,7 @@ mod tests {
     }
 
     #[test]
-    fn auto_recalculates_negative_but_keeps_zero_source_cost_for_default_and_named_stores() {
+    fn auto_recalculates_negative_and_zero_source_cost_for_default_and_named_stores() {
         let fixture = fs_fixture!({
             "sessions/project-a/agent_session-a.jsonl": [
                 r#"{"type":"message","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","model":"test-model","usage":{"input":1000,"output":2000,"cost":{"total":-1.25}}}}"#,
@@ -1115,7 +1118,7 @@ mod tests {
         assert_eq!(default_entries.len(), 2);
         assert_eq!(default_entries[0].cost, expected_cost);
         assert_eq!(default_entries[0].data.cost_usd, Some(-1.25));
-        assert_eq!(default_entries[1].cost, 0.0);
+        assert_eq!(default_entries[1].cost, expected_cost);
         assert_eq!(default_entries[1].data.cost_usd, Some(0.0));
 
         let named_entries = read_session_file_for_store(
@@ -1130,7 +1133,7 @@ mod tests {
         assert_eq!(named_entries.len(), 2);
         assert_eq!(named_entries[0].cost, expected_cost);
         assert_eq!(named_entries[0].data.cost_usd, Some(-1.25));
-        assert_eq!(named_entries[1].cost, 0.0);
+        assert_eq!(named_entries[1].cost, expected_cost);
         assert_eq!(named_entries[1].data.cost_usd, Some(0.0));
     }
 

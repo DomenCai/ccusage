@@ -1,6 +1,8 @@
 # AgentLens fork
 
-在上游 ccusage 基础上只加了一个命令：`ccusage entries`，按次输出每条请求，供 AgentLens 自己聚合。其余行为与上游一致。
+在上游 ccusage 基础上加了一个命令：`ccusage entries`，按次输出每条请求，供 AgentLens 自己聚合。另有一处计价差异，其余行为与上游一致：
+
+- pi：Auto 模式下把记录里的 `cost.total: 0` 当作没有成本，改按模型价格估算（价格未知则输出 `null`）。pi 对没配价格的 provider（如自建代理）一律写 0，上游会照单显示 $0，掩盖真实用量。代价是真正免费的模型也会被按公开价格估算。
 
 ## 用法
 
