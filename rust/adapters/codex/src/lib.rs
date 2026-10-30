@@ -3,6 +3,7 @@ use ccusage_core::*;
 
 mod aggregate;
 mod loader;
+mod meta;
 mod parser;
 mod paths;
 mod reader;
@@ -22,6 +23,7 @@ pub use aggregate::{aggregate_events, filter_events_by_date, load_groups};
 #[doc(hidden)]
 pub use loader::load_codex_events_from_directory;
 pub use loader::load_codex_events_with_detection;
+pub use meta::session_meta;
 pub use report::{
     calculate_codex_model_cost, calculate_group_cost, codex_model_missing_pricing,
     non_cached_input_tokens,

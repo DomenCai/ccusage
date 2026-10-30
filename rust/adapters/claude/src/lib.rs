@@ -2,6 +2,7 @@ use ccusage_adapter_common::{chunk_file_indexes_by_size, read_files_parallel};
 use ccusage_core::*;
 
 mod daily;
+mod meta;
 mod paths;
 
 use std::{
@@ -30,6 +31,7 @@ use crate::{
     progress, stored_cost_for_mode,
 };
 
+pub use meta::session_meta;
 #[doc(hidden)]
 pub use paths::timestamp_from_line;
 pub use paths::usage_files;

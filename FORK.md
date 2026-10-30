@@ -25,6 +25,7 @@ ccusage entries --json -O [--since YYYYMMDD] [--until YYYYMMDD] [-z TZ] [--sourc
       "sessionId": "1d4e913b-…",
       "project": "-Users-me-Claude-Scheduled",
       "model": "claude-haiku-5-5",
+      "provider": null,
       "inputTokens": 2,
       "outputTokens": 568,
       "cacheCreationTokens": 38876,
@@ -33,13 +34,21 @@ ccusage entries --json -O [--since YYYYMMDD] [--until YYYYMMDD] [-z TZ] [--sourc
       "cost": 0.0080594
     }
   ],
+  "sessions": {
+    "claude|1d4e913b-…": { "project": "/Users/me/Claude/Scheduled", "title": "每日摘要" }
+  },
   "detectedAgents": ["claude", "codex"]
 }
 ```
 
 - `cost` 为 `null` 表示价格未知，不是 0。
 - `inputTokens` 不含缓存读写；`totalTokens` 还包含个别来源的额外 token（如推理 token 未拆分的情况）。
-- Codex 没有项目信息，`project` 为空字符串；`sessionId` 是 rollout 文件的相对路径。
+- `project` 是来源原始的项目标识（Claude 为编码后的目录名，Codex 为空字符串），只作兜底；真实目录看 `sessions`。Codex 的 `sessionId` 是 rollout 文件的相对路径。
+- `model` 去掉了 pi 系来源的 `[store] ` 前缀，同一模型在不同来源下同名。
+- `provider` 是 API 渠道：pi 取每条消息的 `provider`，Codex 取会话的 `model_provider`，其他来源为 `null`。
+- `sessions` 键为 `<agent>|<sessionId>`，只含窗口内有记录的会话，目前覆盖 claude、codex、pi、kimi、grok、antigravity（各适配器的 `meta.rs`）：
+  - `project`：会话启动时的工作目录；git worktree（含 `.claude/worktrees/`）归到主仓库根目录。
+  - `title`：来源自带的会话标题（Claude `custom-title`、Codex `session_index.jsonl`、Kimi `state.json`、Grok `generated_title`、Antigravity 摘要库），没有时用截断的首条用户消息；可能为 `null`。
 - `detectedAgents` 只在不带 `--since` 时完整：带 `--since` 时 Claude 会跳过窗口外的文件，窗口内无数据就不算检测到。
 
 ## 构建与发布

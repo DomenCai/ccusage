@@ -4,6 +4,7 @@ use ccusage_adapter_common::{
 use ccusage_core::*;
 
 mod loader;
+mod meta;
 mod parser;
 mod paths;
 mod report;
@@ -15,6 +16,7 @@ use crate::{
 #[doc(hidden)]
 pub use loader::load_entries_for_store_path;
 pub use loader::{load_entries, load_entries_for_store_paths};
+pub use meta::session_meta;
 pub use paths::{named_store_paths, paths as default_paths};
 pub use report::{report_from_rows, summarize_entries};
 

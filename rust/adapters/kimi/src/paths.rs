@@ -10,7 +10,7 @@ pub(super) const KIMI_DATA_DIR_ENV: &str = "KIMI_DATA_DIR";
 const KIMI_SESSIONS_DIR_NAME: &str = "sessions";
 const KIMI_WIRE_FILE_NAME: &str = "wire.jsonl";
 
-fn paths() -> Result<Vec<PathBuf>> {
+pub(super) fn paths() -> Result<Vec<PathBuf>> {
     let mut paths = Vec::new();
     let mut seen = HashSet::new();
     if let Ok(env_paths) = env::var(KIMI_DATA_DIR_ENV) {

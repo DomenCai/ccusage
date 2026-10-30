@@ -3,12 +3,13 @@
 //! unified reports use, so deduplication and pricing match `ccusage daily`.
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     io::{BufWriter, Write},
     thread,
 };
 
-use serde_json::{Value, json};
+use ccusage_adapter_common::session_meta::SessionMeta;
+use serde_json::{Map, Value, json};
 
 use crate::{
     BUILT_IN_AGENT_NAMES, LoadedEntry, PricingMap, Result,
@@ -25,8 +26,16 @@ use super::loader::{load_pricing, resolve_named_pi_store_paths, shared_by_source
 struct SourceEntries {
     agent: &'static str,
     rows: Vec<Value>,
+    /// 键为 `<agent>|<sessionId>`，值为 `{project, title}`。
+    sessions: Map<String, Value>,
     detected: bool,
     warnings: Vec<String>,
+}
+
+type MetaLoader<'a> = &'a dyn Fn(&[LoadedEntry]) -> HashMap<String, SessionMeta>;
+
+fn no_meta(_: &[LoadedEntry]) -> HashMap<String, SessionMeta> {
+    HashMap::new()
 }
 
 pub fn run(args: EntriesArgs) -> Result<()> {
@@ -57,9 +66,11 @@ pub fn run(args: EntriesArgs) -> Result<()> {
             let pricing = unified_pricing.as_ref();
             let agent: &'static str = Box::leak(store.name.into_boxed_str());
             handles.push(scope.spawn(move || {
+                let roots = store.paths.clone();
                 let entries =
                     pi::load_entries_for_store_paths(shared, store.paths, agent, Some(pricing))?;
-                Ok(loaded_entries_source(agent, shared, entries, false))
+                let meta = |entries: &[LoadedEntry]| pi::session_meta(&roots, entries);
+                Ok(loaded_entries_source(agent, shared, entries, false, &meta))
             }));
         }
         handles
@@ -73,6 +84,7 @@ pub fn run(args: EntriesArgs) -> Result<()> {
     })?;
 
     let mut rows = Vec::new();
+    let mut sessions = Map::new();
     let mut detected = Vec::new();
     for source in loaded {
         source.warnings.iter().for_each(|w| eprintln!("{w}"));
@@ -80,8 +92,9 @@ pub fn run(args: EntriesArgs) -> Result<()> {
             detected.push(source.agent);
         }
         rows.extend(source.rows);
+        sessions.extend(source.sessions);
     }
-    let output = json!({ "entries": rows, "detectedAgents": detected });
+    let output = json!({ "entries": rows, "sessions": sessions, "detectedAgents": detected });
     // Compact on purpose: remote machines stream this over SSH every poll.
     let stdout = std::io::stdout();
     let mut stdout = BufWriter::new(stdout.lock());
@@ -98,34 +111,22 @@ fn load_source(
 ) -> Result<SourceEntries> {
     // Sources outside this list price themselves and have no shared map.
     let priced = || pricing.expect("source has a shared pricing map");
-    let entries = match agent {
+    let (entries, has_data): (Vec<LoadedEntry>, bool) = match agent {
         "claude" => {
             let entries = if shared.since.is_some() {
                 claude::load_entries_since(shared, None)?
             } else {
                 claude::load_entries(shared, None)?
             };
-            return Ok(loaded_entries_source(agent, shared, entries, false));
+            return Ok(loaded_entries_source(
+                agent,
+                shared,
+                entries,
+                false,
+                &claude::session_meta,
+            ));
         }
         "codex" => return load_codex(shared, priced()),
-        "opencode" => {
-            let entries = opencode::load_entries(shared, AgentReportKind::Daily)?;
-            return Ok(loaded_entries_source(
-                agent,
-                shared,
-                entries,
-                opencode::has_data(),
-            ));
-        }
-        "qwen" => {
-            let entries = qwen::load_entries(shared)?;
-            return Ok(loaded_entries_source(
-                agent,
-                shared,
-                entries,
-                qwen::has_data(),
-            ));
-        }
         "grok" => {
             let entries = grok::load_entries(shared, priced())?;
             return Ok(loaded_entries_source(
@@ -133,52 +134,103 @@ fn load_source(
                 shared,
                 entries,
                 grok::has_data(),
+                &grok::session_meta,
             ));
         }
         "antigravity" => {
             let (entries, warnings) = antigravity::load_entries_with_warnings(shared, priced())?;
-            let mut source = loaded_entries_source(agent, shared, entries, false);
+            let mut source =
+                loaded_entries_source(agent, shared, entries, false, &antigravity::session_meta);
             source.warnings = warnings;
             return Ok(source);
         }
-        "pi" => pi::load_entries(shared, None, Some(priced()))?,
-        "openclaw" => openclaw::load_entries(shared, None, Some(priced()))?,
-        "amp" => amp::load_entries(shared, priced())?,
-        "droid" => droid::load_entries(shared, priced())?,
-        "codebuff" => codebuff::load_entries(shared, priced())?,
-        "hermes" => hermes::load_entries(shared, priced())?,
-        "goose" => goose::load_entries(shared, priced())?,
-        "kilo" => kilo::load_entries(shared, priced())?,
-        "copilot" => copilot::load_entries(shared, priced())?,
-        "gemini" => gemini::load_entries(shared, priced())?,
-        "kimi" => kimi::load_entries(shared, priced())?,
-        "zcode" => zcode::load_entries(shared, priced())?,
+        "pi" => {
+            let entries = pi::load_entries(shared, None, Some(priced()))?;
+            let roots = pi::default_paths(None)?;
+            let meta = |entries: &[LoadedEntry]| pi::session_meta(&roots, entries);
+            return Ok(loaded_entries_source(agent, shared, entries, false, &meta));
+        }
+        "kimi" => {
+            let entries = kimi::load_entries(shared, priced())?;
+            return Ok(loaded_entries_source(
+                agent,
+                shared,
+                entries,
+                false,
+                &kimi::session_meta,
+            ));
+        }
+        "opencode" => (
+            opencode::load_entries(shared, AgentReportKind::Daily)?,
+            opencode::has_data(),
+        ),
+        "qwen" => (qwen::load_entries(shared)?, qwen::has_data()),
+        "openclaw" => (openclaw::load_entries(shared, None, Some(priced()))?, false),
+        "amp" => (amp::load_entries(shared, priced())?, false),
+        "droid" => (droid::load_entries(shared, priced())?, false),
+        "codebuff" => (codebuff::load_entries(shared, priced())?, false),
+        "hermes" => (hermes::load_entries(shared, priced())?, false),
+        "goose" => (goose::load_entries(shared, priced())?, false),
+        "kilo" => (kilo::load_entries(shared, priced())?, false),
+        "copilot" => (copilot::load_entries(shared, priced())?, false),
+        "gemini" => (gemini::load_entries(shared, priced())?, false),
+        "zcode" => (zcode::load_entries(shared, priced())?, false),
         other => unreachable!("unknown built-in agent {other}"),
     };
-    Ok(loaded_entries_source(agent, shared, entries, false))
+    Ok(loaded_entries_source(
+        agent, shared, entries, has_data, &no_meta,
+    ))
 }
 
+/// 会话元数据只为日期过滤后仍有记录的会话补读，`--since` 越短读得越少。
 fn loaded_entries_source(
     agent: &'static str,
     shared: &SharedArgs,
     mut entries: Vec<LoadedEntry>,
     has_data: bool,
+    load_meta: MetaLoader<'_>,
 ) -> SourceEntries {
     let detected = has_data || !entries.is_empty();
     filter_loaded_entries_by_date(&mut entries, shared);
+    let meta = load_meta(&entries);
     let rows = entries
         .iter()
-        .filter_map(|entry| loaded_entry_json(agent, entry))
+        .filter_map(|entry| loaded_entry_json(agent, entry, meta.get(&*entry.session_id)))
         .collect();
     SourceEntries {
         agent,
         rows,
+        sessions: sessions_json(agent, &meta),
         detected,
         warnings: Vec::new(),
     }
 }
 
-fn loaded_entry_json(agent: &str, entry: &LoadedEntry) -> Option<Value> {
+fn sessions_json(agent: &str, meta: &HashMap<String, SessionMeta>) -> Map<String, Value> {
+    meta.iter()
+        .map(|(session_id, meta)| {
+            (
+                format!("{agent}|{session_id}"),
+                json!({ "project": meta.project, "title": meta.title }),
+            )
+        })
+        .collect()
+}
+
+/// pi 系来源在模型名前加了 `[store] ` 前缀（上游用它区分价格覆盖），输出时去掉，
+/// 让同一模型在不同来源下能按名字聚合。
+fn plain_model(model: &str) -> &str {
+    model
+        .strip_prefix('[')
+        .and_then(|rest| rest.split_once("] "))
+        .map_or(model, |(_, name)| name)
+}
+
+fn loaded_entry_json(
+    agent: &str,
+    entry: &LoadedEntry,
+    meta: Option<&SessionMeta>,
+) -> Option<Value> {
     let usage = entry.data.message.usage;
     let cache_creation = usage.cache_creation_token_count();
     let total = usage
@@ -191,11 +243,15 @@ fn loaded_entry_json(agent: &str, entry: &LoadedEntry) -> Option<Value> {
     if total == 0 && entry.cost == 0.0 {
         return None;
     }
-    let model = entry
+    let raw_model = entry
         .model
         .as_deref()
         .or(entry.data.message.model.as_deref())
-        .map(|model| crate::model_aliases::resolve_model_name(model).into_owned());
+        .map(plain_model);
+    let provider = raw_model
+        .zip(meta)
+        .and_then(|(model, meta)| meta.provider_for(model));
+    let model = raw_model.map(|model| crate::model_aliases::resolve_model_name(model).into_owned());
     let cost = if entry.missing_pricing_model.is_some() {
         Value::Null
     } else {
@@ -207,6 +263,7 @@ fn loaded_entry_json(agent: &str, entry: &LoadedEntry) -> Option<Value> {
         "sessionId": &*entry.session_id,
         "project": &*entry.project,
         "model": model,
+        "provider": provider,
         "inputTokens": usage.input_tokens,
         "outputTokens": usage.output_tokens,
         "cacheCreationTokens": cache_creation,
@@ -233,6 +290,10 @@ fn load_codex(shared: &SharedArgs, pricing: &PricingMap) -> Result<SourceEntries
         shared.timezone.as_deref(),
     )?;
     let speed = codex::resolve_codex_speed(CodexSpeed::Auto);
+    let meta = codex::session_meta(groups.keys().map(|key| {
+        let index: usize = key.parse().expect("codex group key is an event index");
+        session_ids[index].as_str()
+    }));
     let mut rows = Vec::with_capacity(groups.len());
     for (key, group) in &groups {
         let index: usize = key.parse().expect("codex group key is an event index");
@@ -251,12 +312,16 @@ fn load_codex(shared: &SharedArgs, pricing: &PricingMap) -> Result<SourceEntries
         };
         let timestamp = crate::parse_ts_timestamp(&event.timestamp)
             .map_or_else(|| event.timestamp.clone(), format_rfc3339_millis);
+        let provider = meta
+            .get(&session_ids[index])
+            .and_then(|meta| meta.provider_for(model));
         rows.push(json!({
             "agent": "codex",
             "timestamp": timestamp,
             "sessionId": &session_ids[index],
             "project": "",
             "model": model,
+            "provider": provider,
             "inputTokens": codex::non_cached_input_tokens(
                 group.input_tokens,
                 group.cached_input_tokens,
@@ -272,6 +337,7 @@ fn load_codex(shared: &SharedArgs, pricing: &PricingMap) -> Result<SourceEntries
     Ok(SourceEntries {
         agent: "codex",
         rows,
+        sessions: sessions_json("codex", &meta),
         detected,
         warnings: Vec::new(),
     })

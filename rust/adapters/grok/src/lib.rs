@@ -4,6 +4,7 @@ use ccusage_adapter_common::{
 use ccusage_core::*;
 
 mod loader;
+mod meta;
 mod parser;
 mod paths;
 mod report;
@@ -14,6 +15,7 @@ use crate::{
 };
 
 pub use loader::{has_data, load_entries};
+pub use meta::session_meta;
 pub(crate) use report::report_from_rows;
 pub use report::summarize_entries;
 

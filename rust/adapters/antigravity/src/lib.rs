@@ -2,6 +2,7 @@ use ccusage_adapter_common::filter_loaded_entries_by_date;
 use ccusage_core::*;
 
 mod loader;
+mod meta;
 mod parser;
 mod paths;
 mod report;
@@ -13,6 +14,7 @@ use crate::{
 
 pub(crate) use loader::load_entries;
 pub use loader::load_entries_with_warnings;
+pub use meta::session_meta;
 pub(crate) use report::report_from_rows;
 pub use report::summarize_entries;
 
