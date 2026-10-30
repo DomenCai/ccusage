@@ -191,6 +191,11 @@ fn command_snapshot(command: Option<Command>) -> Value {
             "config": args.config.as_ref().map(|path| path.to_string_lossy().to_string()),
             "debug": args.debug,
         }),
+        Some(Command::Entries(args)) => json!({
+            "type": "entries",
+            "shared": shared_snapshot(&args.shared),
+            "sources": args.sources,
+        }),
         Some(Command::Codex(args)) => agent_command_snapshot("codex", args),
         Some(Command::OpenCode(args)) => agent_command_snapshot("opencode", args),
         Some(Command::Amp(args)) => agent_command_snapshot("amp", args),
@@ -225,6 +230,31 @@ fn agent_command_snapshot(agent: &str, args: AgentCommandArgs) -> Value {
         "openClawPath": args.open_claw_path,
         "codexSpeed": format!("{:?}", args.codex_speed),
     })
+}
+
+#[test]
+fn parses_entries_with_source_filter() {
+    let Some(Command::Entries(args)) = parse(&[
+        "ccusage",
+        "entries",
+        "--sources",
+        "claude,codex",
+        "--since",
+        "20261030",
+    ])
+    .command
+    else {
+        panic!("expected entries command");
+    };
+    assert_eq!(
+        args.sources,
+        Some(vec!["claude".to_string(), "codex".to_string()])
+    );
+    assert_eq!(args.shared.since.as_deref(), Some("20261030"));
+    assert_eq!(
+        parse_error(&["ccusage", "entries", "--sources", "nope"]),
+        "Unknown source 'nope' for --sources"
+    );
 }
 
 #[test]
